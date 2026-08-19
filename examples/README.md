@@ -1,7 +1,7 @@
 # Example: simple_app
 
 A minimal FastAPI app that registers a few *simulated* dependency checks with
-`fastapi-status-page`. No database or network required — it runs anywhere.
+`fastapi-status-page`. No database or network is required — it runs anywhere.
 
 ## Run it
 
@@ -21,26 +21,29 @@ uv run python -m examples.simple_app
 curl -s localhost:8000/status | python -m json.tool
 ```
 
-With the defaults you'll get **HTTP 200** and an overall `degraded` status:
-`database` and `cache` are healthy, `payments` is a non-critical failure, and
-`slow_report` exceeds its 0.25s timeout.
+With the defaults you get **HTTP 200** and an overall `degraded` status:
+`database` and `redis` are healthy (critical), `payments_api` is a non-critical
+failure, and `reporting` exceeds its 0.25s timeout (also non-critical). Because
+no *critical* check failed, the page stays at `200`.
 
 ```json
 {
-  "status": "yellow",
+  "status": "degraded",
   "checks": [
-    { "name": "database",    "status": "ok",   "critical": true,  "error": null },
-    { "name": "cache",       "status": "ok",   "critical": true,  "error": null },
-    { "name": "payments",    "status": "fail", "critical": false, "error": null },
-    { "name": "slow_report", "status": "fail", "critical": false, "error": "Timeout" }
+    { "name": "database",     "status": "ok",   "duration_ms": 51.2, "error": null,      "critical": true },
+    { "name": "redis",        "status": "ok",   "duration_ms": 0.3,  "error": null,      "critical": true },
+    { "name": "payments_api", "status": "fail", "duration_ms": 20.4, "error": null,      "critical": false },
+    { "name": "reporting",    "status": "fail", "duration_ms": 250.1, "error": "Timeout", "critical": false }
   ]
 }
 ```
 
+(`duration_ms` values will differ from run to run.)
+
 ## HTML view
 
-The status page can also render as an HTML page. Add `?format=html` (or open
-it in a browser):
+The status page can also render as an HTML page. Add `?format=html` (or open it
+in a browser):
 
 ```bash
 curl -s "localhost:8000/status?format=html"
@@ -58,9 +61,9 @@ readiness probe should act on.
 
 ## What each check demonstrates
 
-| Check         | Kind  | Critical | Purpose                                   |
-|---------------|-------|----------|-------------------------------------------|
-| `database`    | async | yes      | Healthy critical dependency               |
-| `cache`       | sync  | yes      | Sync check (runs off the event loop)      |
-| `payments`    | async | no       | Non-critical failure -> degraded          |
-| `slow_report` | async | no       | Per-check `timeout` -> reported as timeout |
+| Check          | Kind  | Critical | Purpose                                     |
+|----------------|-------|----------|---------------------------------------------|
+| `database`     | async | yes      | Healthy critical dependency (cached for 15s)|
+| `redis`        | sync  | yes      | Sync check (runs off the event loop)        |
+| `payments_api` | async | no       | Non-critical failure -> degraded            |
+| `reporting`    | async | no       | Per-check `timeout` -> reported as a timeout |

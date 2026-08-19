@@ -4,18 +4,18 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fastapi-status-page"
-version = "0.1.0"
+dynamic = ["version"]
 description = "A simple, extensible status page for FastAPI applications with pluggable dependency health checks."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Mateusz Jasinski", email = "mateusz@jasinski.software" }]
 keywords = ["fastapi", "status", "health", "healthcheck", "monitoring", "readiness"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Framework :: FastAPI",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
@@ -25,6 +25,10 @@ classifiers = [
 ]
 dependencies = [
     "fastapi>=0.110",
+    # Imported directly (BaseModel, run_in_threadpool, responses). These are
+    # guaranteed by FastAPI today, but declared explicitly since we import them.
+    "pydantic>=2",
+    "starlette>=0.36",
 ]
 
 [project.optional-dependencies]
@@ -44,8 +48,22 @@ Homepage = "https://github.com/mateuszjasinski/fastapi-status-page"
 Repository = "https://github.com/mateuszjasinski/fastapi-status-page"
 Issues = "https://github.com/mateuszjasinski/fastapi-status-page/issues"
 
+[tool.hatch.version]
+path = "src/fastapi_status_page/__init__.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/fastapi_status_page"]
+
+[tool.hatch.build.targets.sdist]
+# Keep the sdist to source + docs users actually need; drop CI/IDE/tooling cruft.
+exclude = [
+    "/.github",
+    "/.idea",
+    "/docs",
+    "/uv.lock",
+    "/.pre-commit-config.yaml",
+    "/local.md",
+]
 
 [tool.ruff]
 line-length = 100

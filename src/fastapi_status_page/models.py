@@ -28,6 +28,9 @@ class Check:
     timeout: float | None
     critical: bool
     cache_ttl: float | None
+    # Whether ``func`` is a coroutine function, resolved once at registration so
+    # the hot path doesn't re-inspect it on every execution.
+    is_async: bool
 
     _cached: "CheckResult | None" = field(default=None, init=False)
     _expires_at: float = field(default=0.0, init=False)
