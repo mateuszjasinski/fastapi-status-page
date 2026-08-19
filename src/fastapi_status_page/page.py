@@ -1,8 +1,8 @@
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from time import monotonic, perf_counter
-from typing import Annotated
+from typing import Annotated, cast
 
 from fastapi import APIRouter, FastAPI, Query
 from starlette.concurrency import run_in_threadpool
@@ -33,9 +33,9 @@ class StatusPage:
         *,
         global_timeout: float = 5,
         default_format: ResponseFormat = ResponseFormat.JSON,
-        enable_errors: bool = True,
+        enable_errors: bool = False,
         service_name: str = "Service",
-        path: str = "/status"
+        path: str = "/status",
     ):
         self._checks: dict[str, Check] = {}
         self._global_timeout = global_timeout
@@ -48,8 +48,8 @@ class StatusPage:
 
     def add_check(
         self,
-        func: CheckFunc,
         name: str,
+        func: CheckFunc,
         *,
         timeout: float | None = None,
         critical: bool = True,
@@ -65,7 +65,11 @@ class StatusPage:
         if name in self._checks:
             raise ValueError(f"Check with name {name} already exists")
         self._checks[name] = Check(
-            func=func, timeout=timeout, critical=critical, cache_ttl=cache_ttl
+            func=func,
+            timeout=timeout,
+            critical=critical,
+            cache_ttl=cache_ttl,
+            is_async=is_async_callable(func),
         )
 
     def register_check(
@@ -77,7 +81,7 @@ class StatusPage:
         cache_ttl: float | None = None,
     ) -> Callable[[CheckFunc], CheckFunc]:
         def decorator(func: CheckFunc) -> CheckFunc:
-            self.add_check(func, name, timeout=timeout, critical=critical, cache_ttl=cache_ttl)
+            self.add_check(name, func, timeout=timeout, critical=critical, cache_ttl=cache_ttl)
             return func
 
         return decorator
@@ -137,10 +141,13 @@ class StatusPage:
         timeout = self._global_timeout if check.timeout is None else check.timeout
         try:
             async with asyncio.timeout(timeout):
-                if is_async_callable(check.func):
-                    ok = await check.func()
+                # ``func`` is typed as returning ``bool | Awaitable[bool]``; the
+                # casts pick the right half per branch. The ``isinstance`` check
+                # below still guards the runtime value if a check misbehaves.
+                if check.is_async:
+                    ok = await cast("Awaitable[bool]", check.func())
                 else:
-                    ok = await run_in_threadpool(check.func)
+                    ok = await run_in_threadpool(cast("Callable[[], bool]", check.func))
 
             # TODO Validate response from function (either bool or custom response).
             if not isinstance(ok, bool):
@@ -150,7 +157,7 @@ class StatusPage:
             error = None
         except TimeoutError:
             status, error = Status.FAIL, "Timeout"
-            if not is_async_callable(check.func):
+            if not check.is_async:
                 # A threadpool worker cannot be cancelled: the sync check keeps
                 # running in the background even though we stopped waiting.
                 logger.warning(
@@ -163,7 +170,8 @@ class StatusPage:
         except ConfigurationError as e:
             status, error = Status.CONFIGURATION_ERROR, str(e)
         except Exception as exc:
-            status, error = Status.FAIL, str(exc) if self._enable_errors else "Unknown error"
+            error_msg = f"Error from dependency {name}: {exc.__class__.__name__}"
+            status, error = Status.FAIL, error_msg if self._enable_errors else "Unknown error"
         return CheckResult(
             name=name,
             status=status,

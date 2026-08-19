@@ -22,18 +22,34 @@ def is_async_callable(obj: Any) -> TypeGuard[Callable[..., Awaitable[Any]]]:
     )
 
 
+# Overall-status severity, highest to lowest: CONFIGURATION_ERROR > FAIL
+# > DEGRADED > OK. A configuration error means the check itself is broken, so it
+# outranks a real outage.
+_SEVERITY: dict[Status, int] = {
+    Status.OK: 0,
+    Status.DEGRADED: 1,
+    Status.FAIL: 2,
+    Status.CONFIGURATION_ERROR: 3,
+}
+
+
 def worst_of(check_results: list[CheckResult]) -> Status:
-    # Severity, highest to lowest: CONFIGURATION_ERROR > FAIL (critical)
-    # > DEGRADED (non-critical fail) > OK. A configuration error means the
-    # check itself is broken, so it outranks a real outage.
+    """Aggregate individual check results into a single overall status.
+
+    A check reports ``OK``, ``FAIL`` or ``CONFIGURATION_ERROR``. The ``critical``
+    flag decides how a problem escalates: a **critical** failure or misconfiguration
+    contributes its own status (``FAIL`` / ``CONFIGURATION_ERROR``), while a
+    **non-critical** one only contributes ``DEGRADED`` — so a broken non-critical
+    dependency never takes the whole endpoint to a 5xx. The overall status is the
+    most severe contribution.
+    """
     global_status = Status.OK
 
     for check_result in check_results:
-        if check_result.status == Status.CONFIGURATION_ERROR:
-            return Status.CONFIGURATION_ERROR
-        if check_result.status == Status.FAIL:
-            if check_result.critical:
-                global_status = Status.FAIL
-            elif global_status != Status.FAIL:
-                global_status = Status.DEGRADED
+        if check_result.status == Status.OK:
+            continue
+        # FAIL or CONFIGURATION_ERROR: escalate only if the check is critical.
+        contribution = check_result.status if check_result.critical else Status.DEGRADED
+        if _SEVERITY[contribution] > _SEVERITY[global_status]:
+            global_status = contribution
     return global_status

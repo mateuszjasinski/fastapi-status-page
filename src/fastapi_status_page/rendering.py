@@ -1,6 +1,6 @@
 """HTML rendering for the status page.
 
-Kept separate from :mod:`fastapi_status_page.status` so the presentation layer
+Kept separate from :mod:`fastapi_status_page.page` so the presentation layer
 can evolve independently of the check/aggregation logic. To avoid a circular
 import, this module keys everything off the *string* status value
 (``status.value``) rather than importing the ``Status`` enum at runtime; the
@@ -22,20 +22,31 @@ _PALETTE: dict[str, dict[str, str]] = {
     "ok": {"color": "#1a8f4c", "bg": "#e9f6ee", "border": "#c3e6d1", "ring": "#d4efdd"},
     "fail": {"color": "#c73338", "bg": "#fceceb", "border": "#f2c9c8", "ring": "#f7dedd"},
     "degraded": {"color": "#9a5a12", "bg": "#fbf1e2", "border": "#f0dcbd", "ring": "#f5e6cf"},
+    "configuration_error": {
+        "color": "#8a4fbf",
+        "bg": "#f4edfb",
+        "border": "#e3d3f2",
+        "ring": "#ece0f7",
+    },
     "unknown": {"color": "#6b6d7c", "bg": "#f1f1f5", "border": "#e0e0e8", "ring": "#eaeaef"},
 }
 
-_LABELS = {"ok": "Operational", "fail": "Failing", "degraded": "Degraded", "unknown": "Unknown"}
+_LABELS = {
+    "ok": "Operational",
+    "fail": "Failing",
+    "degraded": "Degraded",
+    "configuration_error": "Misconfigured",
+    "unknown": "Unknown",
+}
 
-_MONO = "'JetBrains Mono', monospace"
+# Self-contained: only system font stacks, so the page renders identically
+# offline / air-gapped and makes no external requests (no CDN, CSP-friendly).
+_SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+_MONO = "ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace"
 
 _HEAD = """<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Service status</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600&display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   body { margin: 0; }
   *, *::before, *::after { box-sizing: border-box; }
@@ -58,7 +69,7 @@ def _render_row(
     name: str, status_value: str, critical: bool, duration_ms: float, error: str | None
 ) -> str:
     pal = _palette_for(status_value)
-    status_label = _LABELS.get(status_value, status_value.title())
+    status_label = _LABELS.get(status_value, status_value.replace("_", " ").title())
     critical_label = "Yes" if critical else "No"
     critical_color = "#3a3c49" if critical else "#a0a2ae"
     error_text = html_lib.escape(error) if error else "—"
@@ -94,7 +105,7 @@ def render_html(
 
     overall_value = response.status.value
     opal = _palette_for(overall_value)
-    overall_label = _LABELS.get(overall_value, overall_value.title())
+    overall_label = _LABELS.get(overall_value, overall_value.replace("_", " ").title())
 
     total = len(response.checks)
     passing = sum(1 for c in response.checks if c.status.value == "ok")
@@ -115,7 +126,7 @@ def render_html(
         ]
     )
 
-    body = f"""<div style="min-height: 100vh; background: #f5f5f8; font-family: 'Inter', system-ui, sans-serif; color: #1a1b23; padding: 40px 20px; -webkit-font-smoothing: antialiased;">
+    body = f"""<div style="min-height: 100vh; background: #f5f5f8; font-family: {_SANS}; color: #1a1b23; padding: 40px 20px; -webkit-font-smoothing: antialiased;">
   <div style="max-width: 940px; margin: 0 auto;">
 
     <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px;">

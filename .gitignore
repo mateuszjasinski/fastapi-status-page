@@ -31,3 +31,6 @@ coverage.xml
 .idea/
 .vscode/
 .DS_Store
+
+# Local, untracked notes
+local.md
